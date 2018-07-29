@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+"""
+Created on 2018-07-29
+
+AUTHORS: Enrico Sanna - Unversita' degli Studi Guglielmo Marconi - Rome (IT)
+
+PURPOSE: Script that create a RNN LSTM Model to predict values of PYSIONET / CinC Challenge 2018
+
+"""
+
+
 from keras.preprocessing import sequence
 from keras.models import Sequential
 from keras.layers import Dense, Embedding
@@ -9,11 +20,13 @@ import physionetchallenge2018_lib as phyc
 
 import os
 import glob
+import shutil
 
 from keras.callbacks import EarlyStopping, ModelCheckpoint,CSVLogger,TensorBoard
 from keras.utils import plot_model
 from keras import backend as K
 from keras.callbacks import Callback,warnings
+import my_logger as L
 
 """
 ************************************************************************************
@@ -27,7 +40,9 @@ p_BATCH_SIZE=1000    numero di campioni per volta passati al modello
 p_EPOCHS=75          epoche, numero di volte che lo stesso report viene fatto ripassare.
 p_DATASET_DIR        directory del dataset
 p_MODEL_FILE         file dove salvo i pesi del modello
-p_LOG_FILE           log testuale in CSV
+p_LOG_FILE           log generale sintetico con AUPRC e AUROC
+p_KERAS_LOG_FILE     log testuale in CSV
+p_ENTRY_ZIP_FILE     nome del file finale prodotto
 p_TENSORBOARD_LOGDIR directory di log per Tensorboard
 ************************************************************************************
 """
@@ -40,49 +55,58 @@ p_EPOCHS=75
 p_MODEL_NAME="LSTM"
 p_MODEL_FILE=str(p_MODEL_NAME)+"_input_"+str(p_INPUT_FEAT)+"_w"+str(p_WINDOW_SIZE)+"_b"+str(p_BATCH_SIZE)+"_e"+str(p_EPOCHS)+".hdf5"
 p_LOG_FILE=str(p_MODEL_NAME)+"_input_"+str(p_INPUT_FEAT)+"_w"+str(p_WINDOW_SIZE)+"_b"+str(p_BATCH_SIZE)+"_e"+str(p_EPOCHS)+".log"
+p_KERAS_LOG_FILE=str(p_MODEL_NAME)+"_input_"+str(p_INPUT_FEAT)+"_w"+str(p_WINDOW_SIZE)+"_b"+str(p_BATCH_SIZE)+"_e"+str(p_EPOCHS)+"_Keras.log"
+p_ENTRY_ZIP_FILE=str(p_MODEL_NAME)+"_input_"+str(p_INPUT_FEAT)+"_w"+str(p_WINDOW_SIZE)+"_b"+str(p_BATCH_SIZE)+"_e"+str(p_EPOCHS)+"_entry.zip"
 p_TENSORBOARD_LOGDIR=str(p_MODEL_NAME)+"_input_"+str(p_INPUT_FEAT)+"_w"+str(p_WINDOW_SIZE)+"_b"+str(p_BATCH_SIZE)+"_e"+str(p_EPOCHS)
+
 """
 Inzializzo il modello e stampo i parametri
 """
 def init():
-    print("*************************** init ***********************************")
-    print("Fs (frequenza di campionamento segnali): " + str(Fs))
-    print("p_WINDOW_SIZE=x*Fs   dimensione della serie storica passata al modello: " + str(p_WINDOW_SIZE))
-    print("p_INPUT_FEAT=13      numero di segnali in input: " + str(p_INPUT_FEAT))
-    print(
-        "p_OUTPUT_CLASS=3     # 1,0,-1 (total of 3) - numero di classi contenute nel tracciato di target y (arousals):  " + str(
-            p_OUTPUT_CLASS))
-    print("p_BATCH_SIZE=1000    numero di campioni per volta passati al modello " + str(p_BATCH_SIZE))
-    print("p_EPOCHS=75          epoche, numero di volte che lo stesso report viene fatto ripassare: " + str(p_EPOCHS))
-    print("p_MODEL_FILE - file dove salvo i pesi del modello:" + str(p_MODEL_FILE))
-    print("p_DATASET_DIR - directory del dataset:" + str(phyc.p_DATASET_DIR))
-    print("p_LOG_FILE - log testuale in CSV:" + str(p_LOG_FILE))
-    print("p_TENSORBOARD_LOGDIR - directory di log per Tensorboard:" + str(p_TENSORBOARD_LOGDIR))
-    print("********************************************************************")
+
     # Create the 'models' subdirectory and delete any existing model files
     try:
         os.mkdir('models')
     except OSError:
         pass
-    # Create the 'models' subdirectory and delete any existing model files
-    try:
-        os.mkdir('logs')
-    except OSError:
-        pass
-    # Create the 'models' subdirectory and delete any existing model files
+    # Create the 'tensorboard' subdirectory
     try:
         os.mkdir('tensorboard')
     except OSError:
         pass
 
-    #for f in glob.glob('models/LSTM_*.hdf5'):
-       # os.remove(f)
+    for f in glob.glob('models/LSTM_*.hdf5'):
+        os.remove(f)
+
+    for f in glob.glob('tensorboard/*'):
+        shutil.rmtree(f, ignore_errors=True)
+
+    stringInit = "";
+    stringInit += str("\r\n*************************** init ***********************************")
+    stringInit += str("\r\nFs (frequenza di campionamento segnali): " + str(Fs))
+    stringInit += str(
+        "\r\np_WINDOW_SIZE=x*Fs   dimensione della serie storica passata al modello: " + str(p_WINDOW_SIZE))
+    stringInit += str("\r\np_INPUT_FEAT=13      numero di segnali in input: " + str(p_INPUT_FEAT))
+    stringInit += str(
+        "\r\np_OUTPUT_CLASS=3     # 1,0,-1 (total of 3) - numero di classi contenute nel tracciato di target y (arousals):  " + str(
+            p_OUTPUT_CLASS))
+    stringInit += str("\r\np_BATCH_SIZE=1000    numero di campioni per volta passati al modello " + str(p_BATCH_SIZE))
+    stringInit += str(
+        "\r\np_EPOCHS=75          epoche, numero di volte che lo stesso report viene fatto ripassare: " + str(p_EPOCHS))
+    stringInit += str("\r\np_MODEL_FILE - file dove salvo i pesi del modello:" + str(p_MODEL_FILE))
+    stringInit += str("\r\np_DATASET_DIR - directory del dataset:" + str(phyc.p_DATASET_DIR))
+    stringInit += str("\r\np_LOG_FILE - log testuale in CSV:" + str(p_LOG_FILE))
+    stringInit += str("\r\np_KERAS_LOG_FILE - log testuale in CSV:" + str(p_KERAS_LOG_FILE))
+    stringInit += str("\r\np_TENSORBOARD_LOGDIR - directory di log per Tensorboard:" + str(p_TENSORBOARD_LOGDIR))
+    stringInit += str("\r\n********************************************************************")
+    L.log_info(stringInit)
+
 
 def finish():
     pass
 
 def loaddata(record_name):
-    print("Loading record: " + str(record_name))
+    L.log_info("Loading record: " + str(record_name))
     header_file = record_name + '.hea'
     signal_file = record_name + '.mat'
     arousal_file = record_name + '-arousal.mat'
@@ -205,7 +229,7 @@ class AdvancedLearnignRateScheduler(Callback):
 
 
 def LSTM_model():
-    print('Build model...')
+    print('Build model LSTM...')
     model = Sequential()
     model.add(LSTM(256, dropout=0.2, recurrent_dropout=0.2, input_shape=(None, p_INPUT_FEAT)))
     model.add(Dense(p_OUTPUT_CLASS, activation='relu'))  #better perform relu or hard_sigmoid
@@ -264,7 +288,7 @@ def preprocess_record(record_name):
         # Saving best model
         ModelCheckpoint('models/'+str(p_MODEL_FILE), monitor='val_loss', save_best_only=False,
                         verbose=1),
-        CSVLogger('logs/'+p_LOG_FILE, separator=',', append=False),
+        CSVLogger('logs/'+p_KERAS_LOG_FILE, separator=',', append=False),
         TensorBoard(log_dir='tensorboard/'+str(p_TENSORBOARD_LOGDIR), histogram_freq=0, batch_size=32, write_graph=True,
                                     write_grads=False, write_images=False, embeddings_freq=0,
                                     embeddings_layer_names=None, embeddings_metadata=None, embeddings_data=None)
@@ -294,7 +318,7 @@ def preprocess_record(record_name):
     try:
       model.save_weights('models/'+str(p_MODEL_FILE))
     except:
-        print("non ho trovato i pesi. parto a  zero")
+        L.log_info("non ho trovato i pesi. parto a  zero")
 
 def classify_record(record_name):
     signals, arousals, recordLength = loaddata(record_name)
@@ -304,12 +328,12 @@ def classify_record(record_name):
     x = strided_axis0_backward(signals, p_WINDOW_SIZE)
     model = LSTM_model()
     # Need to add dimension for training
-    pred = model.predict(x, batch_size=p_BATCH_SIZE)
-    predict_classes = np.argmax(pred, axis=1)
+    predictions = model.predict(x, batch_size=p_BATCH_SIZE)
+    predict_classes = np.argmax(predictions, axis=1)
     #porto a 0 anziché -1 perché da errore in fase di scoring
     predict_classes[predict_classes == 2] = 0
     #print("predict_classes"+str(predict_classes))
     #print("pred" + str(pred))
     #return predict_classes,
-    pred_arousal_probabilities=pred[:,1].clip(min=0)
+    pred_arousal_probabilities=predictions[:,1].clip(min=0)
     return  predict_classes,pred_arousal_probabilities

@@ -1,7 +1,14 @@
+#!/usr/bin/env python3
 """
-Created on Wed Mar 28 13:19:34 2018
+Created on 2018-07-29
 
-@author: mohammad
+AUTHORS: Enrico Sanna - Unversita' degli Studi Guglielmo Marconi - Rome (IT)
+
+PURPOSE: This script contains utility for read e manipulate signals data of the PHYSIONET / CinC Challenge 2018
+         Developed from the Example script submitted by Mohammad M. Ghassemi, Benjamin E. Moody
+
+REQUIREMENTS: We assume that you have downloaded the data from
+              https://physionet.org/physiobank/database/challenge/2018/#files
 """
 
 import os
@@ -136,7 +143,7 @@ def get_subject_data_test(signal_file, signal_names):
 # -----------------------------------------------------------------------------
 #  Transform data to matrix of windows_size_length
 # -----------------------------------------------------------------------------
-def signalsToMatrix(data, arousal,recordLength):
+def signalsToMatrix(data, arousal,recordLength,WINDOW_SIZE):
     #FS = 300
     FS = 200
     # p_WINDOW_SIZE = 60 * FS
