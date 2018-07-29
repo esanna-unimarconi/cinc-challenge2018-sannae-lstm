@@ -249,6 +249,11 @@ def LSTM_model():
 def preprocess_record(record_name):
     signals,arousals, recordLength = loaddata(record_name)
 
+    # Ignore records that do not contain any arousals
+    if 1 not in arousals:
+        L.log_info('no arousals found in %s\n' % record_name)
+        return
+
     #scalo i segnali di input nell'intervallo da -1 a 1
     signals=scale(signals)
     #x=signals.reshape(1, recordLength, 13)
