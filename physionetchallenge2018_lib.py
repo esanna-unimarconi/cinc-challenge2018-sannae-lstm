@@ -91,13 +91,13 @@ def import_arousals(file_name):
     try:
         f = h5py.File(file_name, 'r')
         arousals = numpy.array(f['data']['arousals'])
-        arousals = arousals[220000:230000]
+        arousals = arousals#[220000:230000]
     except:
         arousals=None
     return arousals
 
 def import_signals(file_name):
-    return np.transpose(scipy.io.loadmat(file_name)['val'])[220000:230000]
+    return np.transpose(scipy.io.loadmat(file_name)['val'])#[220000:230000]
 
 # -----------------------------------------------------------------------------
 # Take a header file as input, and returns the names of the signals

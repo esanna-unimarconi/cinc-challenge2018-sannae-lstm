@@ -47,11 +47,11 @@ p_TENSORBOARD_LOGDIR directory di log per Tensorboard
 ************************************************************************************
 """
 Fs=200
-p_WINDOW_SIZE=3*Fs
+p_WINDOW_SIZE=1*Fs
 p_INPUT_FEAT=13
 p_OUTPUT_CLASS=3  # 1,0,-1 (total of 3)
-p_BATCH_SIZE=1000
-p_EPOCHS=75
+p_BATCH_SIZE=800
+p_EPOCHS=50
 p_MODEL_NAME="LSTM"
 p_MODEL_FILE=str(p_MODEL_NAME)+"_input_"+str(p_INPUT_FEAT)+"_w"+str(p_WINDOW_SIZE)+"_b"+str(p_BATCH_SIZE)+"_e"+str(p_EPOCHS)+".hdf5"
 p_LOG_FILE=str(p_MODEL_NAME)+"_input_"+str(p_INPUT_FEAT)+"_w"+str(p_WINDOW_SIZE)+"_b"+str(p_BATCH_SIZE)+"_e"+str(p_EPOCHS)+".log"
@@ -231,7 +231,7 @@ class AdvancedLearnignRateScheduler(Callback):
 def LSTM_model():
     print('Build model LSTM...')
     model = Sequential()
-    model.add(LSTM(256, dropout=0.2, recurrent_dropout=0.2, input_shape=(None, p_INPUT_FEAT)))
+    model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2, input_shape=(None, p_INPUT_FEAT)))
     model.add(Dense(p_OUTPUT_CLASS, activation='relu'))  #better perform relu or hard_sigmoid
 
     # try using different optimizers and different optimizer configs
