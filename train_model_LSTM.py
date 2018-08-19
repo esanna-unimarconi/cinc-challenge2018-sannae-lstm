@@ -8,16 +8,20 @@ PURPOSE: Script that create a RNN LSTM Model to predict values of PYSIONET / Cin
 
 """
 
-
+from keras.utils.np_utils import to_categorical
+import tensorflow as tf
 from keras.preprocessing import sequence
 from keras.models import Sequential
 from keras.layers import Dense, Embedding
 from keras.layers import LSTM
+from keras.layers import TimeDistributed
+from keras.layers import Bidirectional
 from keras.datasets import imdb
+from keras.regularizers import l2
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 import physionetchallenge2018_lib as phyc
-
+from sklearn.utils import class_weight
 import os
 import glob
 import shutil
@@ -47,11 +51,11 @@ p_TENSORBOARD_LOGDIR directory di log per Tensorboard
 ************************************************************************************
 """
 Fs=200
-p_WINDOW_SIZE=1*Fs
+p_WINDOW_SIZE=2*Fs
 p_INPUT_FEAT=13
 p_OUTPUT_CLASS=3  # 1,0,-1 (total of 3)
-p_BATCH_SIZE=800
-p_EPOCHS=50
+p_BATCH_SIZE=400
+p_EPOCHS=100
 p_MODEL_NAME="LSTM"
 p_MODEL_FILE=str(p_MODEL_NAME)+"_input_"+str(p_INPUT_FEAT)+"_w"+str(p_WINDOW_SIZE)+"_b"+str(p_BATCH_SIZE)+"_e"+str(p_EPOCHS)+".hdf5"
 p_LOG_FILE=str(p_MODEL_NAME)+"_input_"+str(p_INPUT_FEAT)+"_w"+str(p_WINDOW_SIZE)+"_b"+str(p_BATCH_SIZE)+"_e"+str(p_EPOCHS)+".log"
@@ -231,22 +235,54 @@ class AdvancedLearnignRateScheduler(Callback):
 def LSTM_model():
     print('Build model LSTM...')
     model = Sequential()
-    model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2, input_shape=(None, p_INPUT_FEAT)))
-    model.add(Dense(p_OUTPUT_CLASS, activation='relu'))  #better perform relu or hard_sigmoid
-
+    model.add(LSTM(32, dropout=0.2, kernel_regularizer=l2(0.), recurrent_dropout=0.2, input_shape=(None, p_INPUT_FEAT),return_sequences=True, go_backwards=True))
+    model.add(Dense(p_OUTPUT_CLASS, activation='hard_sigmoid'))  #better perform relu or hard_sigmoid
+    #model.add(TimeDistributed(Dense(p_OUTPUT_CLASS, activation='sigmoid')))
     # try using different optimizers and different optimizer configs
     model.compile(loss='binary_crossentropy',
                   optimizer='adam',
-                  metrics=['accuracy'])
+                  metrics=[auc_pr,'accuracy'])  #,'accuracy'
     try:
       model.load_weights('models/'+str(p_MODEL_FILE))
     except:
         print("non ho trovato i pesi. parto a  zero")
     return model
 
+def Bi_LSTM_model():
+    print('Build model Bidirectional LSTM...')
+    model = Sequential()
+    model.add(Bidirectional(LSTM(64, dropout=0.2, kernel_regularizer=l2(0.), recurrent_dropout=0.2,return_sequences=False), input_shape=(None, p_INPUT_FEAT), merge_mode='concat'))
+    model.add(Dense(p_OUTPUT_CLASS, activation='hard_sigmoid'))  #better perform relu or hard_sigmoid
+    #model.add(TimeDistributed(Dense(p_OUTPUT_CLASS, activation='sigmoid')))
+    # try using different optimizers and different optimizer configs
+    model.compile(loss='binary_crossentropy',
+                  optimizer='adam',
+                  metrics=[auc_pr,'accuracy'])  #,'accuracy'
+    try:
+      model.load_weights('models/'+str(p_MODEL_FILE))
+    except:
+        print("non ho trovato i pesi. parto a  zero")
+    return model
 
+def as_keras_metric(method):
+    import functools
+    from keras import backend as K
+    import tensorflow as tf
+    @functools.wraps(method)
+    def wrapper(self, args, **kwargs):
+        """ Wrapper for turning tensorflow metrics into keras metrics """
+        value, update_op = method(self, args, **kwargs)
+        K.get_session().run(tf.local_variables_initializer())
+        with tf.control_dependencies([update_op]):
+            value = tf.identity(value)
+        return value
+    return wrapper
 
-def preprocess_record(record_name):
+@as_keras_metric
+def auc_pr(y_true, y_pred, curve='PR'):
+    return tf.metrics.auc(y_true, y_pred, curve=curve,summation_method='careful_interpolation')
+
+def preprocess_record(record_name, model):
     signals,arousals, recordLength = loaddata(record_name)
 
     # Ignore records that do not contain any arousals
@@ -259,6 +295,11 @@ def preprocess_record(record_name):
     #x=signals.reshape(1, recordLength, 13)
     x=strided_axis0_backward(signals,p_WINDOW_SIZE)
     y=arousals
+
+    #utilizzo un overlapping parziale per ridurre il tempo di training
+    overlapping=p_WINDOW_SIZE
+    x=x[1::overlapping,:,:]
+    y = y[1::overlapping, :]
     print("x shape: "+ str(x.shape))
     print("y shape: "+ str(y.shape))
 
@@ -275,31 +316,52 @@ def preprocess_record(record_name):
             y2[index, 2] = 1  # print("messo a  - uno")
         index = index + 1
 
-    #y2[np.arange(y.shape[0]), y] = 1.0
+        #y2[np.arange(y.shape[0]), y] = 1.0
     print("y2 shape: "+ str(y2.shape))
    # print("x:  "+str(x))
     #print("y:  "+str(y))
     #print("y2:  "+str(y2))
+    #y2 = y2.reshape(11925, 1, 3)
 
     y2sum= y2.sum(axis=0)
 
     print("y2 sum: "+ str(y2sum))
 
+    # provo ad aggiungere un peso per controbilanciare la scarsità di 1 nei record
+
+    unique, counts = np.unique(arousals, return_counts=True)
+    print("arousals count valori:" + str(dict(zip(unique, counts))))
+
+    categorical_labels = to_categorical(arousals, num_classes=None)
+    y = categorical_labels
+    print("y " + str(y))
+    y_ints = [yi.argmax() for yi in y2]
+
+    unique, counts = np.unique(y_ints, return_counts=True)
+    print("y_ints count valori:" + str(dict(zip(unique, counts))))
+    class_weights = class_weight.compute_class_weight('balanced',
+                                                      np.unique(y_ints),
+                                                      y_ints)
+
+    # class_weights='auto'
+    L.log_info("CLASS Wheigths" + str(class_weights))
+
     callbacks = [
         # Early stopping definition
-        EarlyStopping(monitor='val_loss', patience=3, verbose=1),
+        EarlyStopping(monitor='loss', patience=3, verbose=1),
         # Decrease learning rate by 0.1 factor
-        AdvancedLearnignRateScheduler(monitor='val_loss', patience=1, verbose=1, mode='auto', decayRatio=0.1),
+        #sAdvancedLearnignRateScheduler(monitor='loss', patience=1, verbose=1, mode='auto', decayRatio=0.1),
         # Saving best model
-        ModelCheckpoint('models/'+str(p_MODEL_FILE), monitor='val_loss', save_best_only=False,
+        ModelCheckpoint('models/'+str(p_MODEL_FILE), monitor='loss', save_best_only=True,
                         verbose=1),
         CSVLogger('logs/'+p_KERAS_LOG_FILE, separator=',', append=False),
         TensorBoard(log_dir='tensorboard/'+str(p_TENSORBOARD_LOGDIR), histogram_freq=0, batch_size=32, write_graph=True,
                                     write_grads=False, write_images=False, embeddings_freq=0,
                                     embeddings_layer_names=None, embeddings_metadata=None, embeddings_data=None)
     ]
-
-    model =LSTM_model()
+    if (model is None):
+        #model =LSTM_model()
+        model = Bi_LSTM_model()
 
     # split train and validation sets
 
@@ -310,7 +372,7 @@ def preprocess_record(record_name):
     Xval = x[idxval_start:idxval_start+idxval_size, :, :]
     Yval = y2[idxval_start:idxval_start + idxval_size, :]
     print('Train...')
-    model.fit(x,y2, validation_data=(Xval,Yval),epochs=p_EPOCHS,batch_size=p_BATCH_SIZE, callbacks=callbacks) #200
+    model.fit(x,y2, validation_data=(Xval,Yval),epochs=p_EPOCHS, class_weight=class_weights, batch_size=p_BATCH_SIZE, callbacks=callbacks) #200
     pred = model.predict(x)
     predict_classes = np.argmax(pred,axis=1)
     predict_classes[predict_classes == 2] = -1
@@ -325,20 +387,47 @@ def preprocess_record(record_name):
     except:
         L.log_info("non ho trovato i pesi. parto a  zero")
 
-def classify_record(record_name):
+    return model
+
+def classify_record(record_name, model):
     signals, arousals, recordLength = loaddata(record_name)
     # scalo i segnali di input nell'intervallo da -1 a 1
     signals = scale(signals)
     # x=signals.reshape(1, recordLength, 13)
     x = strided_axis0_backward(signals, p_WINDOW_SIZE)
-    model = LSTM_model()
+    if (model is None):
+        #model =LSTM_model()
+        model = Bi_LSTM_model()
+
+        # utilizzo un overlapping parziale per ridurre il tempo di training
+    overlapping = p_WINDOW_SIZE
+    x = x[1::overlapping, :, :]
+    print("x shape: " + str(x.shape))
+
     # Need to add dimension for training
     predictions = model.predict(x, batch_size=p_BATCH_SIZE)
+
+    print("predictions.shape: " + str(predictions.shape))
+
     predict_classes = np.argmax(predictions, axis=1)
     #porto a 0 anziché -1 perché da errore in fase di scoring
-    predict_classes[predict_classes == 2] = 0
+    predict_classes[predict_classes == 2] = 1
     #print("predict_classes"+str(predict_classes))
     #print("pred" + str(pred))
     #return predict_classes,
-    pred_arousal_probabilities=predictions[:,1].clip(min=0)
-    return  predict_classes,pred_arousal_probabilities
+    predictions=predictions[:,1].clip(min=0)
+    print("predictions.shape: " + str(predictions.shape))
+    print("recordLength: " + str(recordLength))
+
+    predictions = [x * np.ones([overlapping]) for x in predictions]
+    #print("predictions.shape: " + str(predictions.shape))
+
+    predictions = np.concatenate(predictions)
+    print("predictions.shape: " + str(predictions.shape))
+    if((recordLength-np.size(predictions,0))>0):
+        predictions = np.append(predictions, np.zeros(recordLength - np.size(predictions, 0)))
+    if ((recordLength - np.size(predictions, 0)) < 0):
+        predictions = predictions[:recordLength]
+    print("predictions.shape: " + str(predictions.shape))
+    pred_arousal_probabilities=predictions
+    return  predict_classes,pred_arousal_probabilities, model

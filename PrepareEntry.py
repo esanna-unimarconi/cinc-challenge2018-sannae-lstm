@@ -10,6 +10,8 @@ PURPOSE: This script prepares an entry for the physionet 2018 Challenge.
 REQUIREMENTS: We assume that you have downloaded the data from
               https://physionet.org/physiobank/database/challenge/2018/#files
 """
+
+
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import numpy as np
@@ -31,7 +33,7 @@ from sklearn.metrics import precision_recall_curve, auc, roc_auc_score
 # -----------------------------------------------------------------------------
 # Generate the data to train the classifier
 # -----------------------------------------------------------------------------
-def train():
+def train(model):
     T.init()
 
     # Generate a data frame that points to the challenge files
@@ -43,15 +45,16 @@ def train():
         print('Preprocessing training subject: %d/%d'
               % (i + 1, np.size(tr_files, 0)))
         record_name = tr_files.header.values[i][:-4]
-        T.preprocess_record(record_name)
+        model = T.preprocess_record(record_name, model)
     #T.preprocess_record(record_name)
 
     T.finish()
+    return model
 
 # -----------------------------------------------------------------------------
 # Run the classifier on each training subject, and compute the mean performance
 # -----------------------------------------------------------------------------
-def score_training_set():
+def score_training_set(model):
 
     try:
         os.mkdir('training_output')
@@ -60,22 +63,25 @@ def score_training_set():
 
     # Generate a data frame that points to the challenge files
     tr_files, te_files = phyc.get_files()
-
+    j=0
     score = Challenge2018Score()
     for i in range(0, np.size(tr_files, 0)):
         gc.collect()
-        sys.stdout.write('Evaluating training subject: %d/%d'
+        sys.stdout.write('\nEvaluating training subject: %d/%d'
                          % (i + 1, np.size(tr_files, 0)))
         sys.stdout.flush()
         record_name = tr_files.header.values[i][:-4]
-        predictions, pred_arousal_probabilities = T.classify_record(record_name)
+        predictions, pred_arousal_probabilities, model = T.classify_record(record_name, model)
 
         arousals = phyc.import_arousals(tr_files.arousal.values[i])
         #appiattisce in un array 1D
         arousals = np.ravel(arousals)
 
-        print (arousals.shape)
-        print(predictions.shape)
+        print("arousals.shape: " + str(arousals.shape))
+        print("predictions.shape: " + str(predictions.shape))
+        print("pred_arousal_probabilities.shape: " + str(pred_arousal_probabilities.shape))
+
+        print_arousal_predictions(arousals, pred_arousal_probabilities)
 
         score.score_record(arousals, pred_arousal_probabilities, record_name)
         auroc = score.record_auroc(record_name)
@@ -93,6 +99,13 @@ def score_training_set():
     L.log_info('Training AUROC Performance (gross): %f' % auroc_g)
     L.log_info('Training AUPRC Performance (gross): %f' % auprc_g)
     L.log_info("\n\r ")
+    return model
+
+def print_arousal_predictions(arousals, predictions):
+    unique, counts = np.unique(arousals, return_counts=True)
+    print ("arousals count valori:"+str(dict(zip(unique, counts))))
+    unique, counts = np.unique(predictions, return_counts=True)
+    print ("predictions count valori:"+str(dict(zip(unique, counts))))
 
 # -----------------------------------------------------------------------------
 # Run the classifier on each test subject, and save the predictions
@@ -115,7 +128,7 @@ def evaluate_test_set():
         record_name = te_files.header.values[i][:-4]
         output_file = "test_output/"+os.path.basename(record_name) + '.vec'
         L.log_info("Salvo i files esito del test in "+str(output_file))
-        predictions, pred_arousal_probabilities = T.classify_record(record_name)
+        predictions, pred_arousal_probabilities, model = T.classify_record(record_name, model)
         #np.savetxt(output_file, predictions [:,1], fmt='%.3f')
         np.savetxt(output_file, pred_arousal_probabilities, fmt='%.3f')
 
@@ -150,11 +163,12 @@ if __name__ == '__main__':
     dtInizioElaborazione = datetime.datetime.now()
     L.log_info("Execution starts at: "+str(dtInizioElaborazione))
     try:
+        model = None
         L.log_info("############################## TRAIN ##############################")
-        train()
+        model =train(model)
         L.log_info("###################### SCORE TRAINING SET #########################")
-        score_training_set()
-        L.log_info("###################### EVALUATE TEST SET  #########################")
+        model =score_training_set(model)
+        #.log_info("###################### EVALUATE TEST SET  #########################")
         evaluate_test_set()
         L.log_info("####################### PACKAGE ENTRY #############################")
         package_entry()

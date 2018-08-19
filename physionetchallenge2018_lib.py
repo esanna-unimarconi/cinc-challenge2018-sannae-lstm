@@ -28,7 +28,7 @@ import warnings
 warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
 
 
-p_DATASET_DIR='/opt/PHYSIONET/ch2018_mini'
+p_DATASET_DIR='/opt/PHYSIONET/ch2018_mini2'
 # -----------------------------------------------------------------------------
 # returns a list of the training and testing file locations for easier import
 # -----------------------------------------------------------------------------
